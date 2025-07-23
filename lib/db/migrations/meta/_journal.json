@@ -8,6 +8,27 @@
       "when": 1726443359662,
       "tag": "0000_soft_the_anarchist",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1753244188451,
+      "tag": "0001_faithful_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1753260759395,
+      "tag": "0002_lively_lady_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1753262078247,
+      "tag": "0003_pink_infant_terrible",
+      "breakpoints": true
     }
   ]
 }
