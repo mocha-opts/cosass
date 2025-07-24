@@ -19,7 +19,7 @@ export default function DashboardLayout({
     { href: "/dashboard/general", icon: Settings, label: "General" },
     { href: "/dashboard/activity", icon: Activity, label: "Activity" },
     { href: "/dashboard/security", icon: Shield, label: "Security" },
-    { href: "/dashboard/articles", icon: Book, label: "Articles" },
+    { href: "/articles", icon: Book, label: "Articles" },
   ];
 
   return (

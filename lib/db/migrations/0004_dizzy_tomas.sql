@@ -1,0 +1,1 @@
+ALTER TABLE "word_notes" ADD COLUMN "highlight_color" varchar(50) DEFAULT 'yellow';

@@ -94,14 +94,15 @@ export const wordNotes = pgTable("word_notes", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")
     .notNull()
-    .references(() => users.id, { onDelete: "cascade" }), // ✅
+    .references(() => users.id, { onDelete: "cascade" }),
   articleId: integer("article_id")
     .notNull()
-    .references(() => articles.id, { onDelete: "cascade" }), // ✅
+    .references(() => articles.id, { onDelete: "cascade" }),
   word: varchar("word", { length: 255 }).notNull(),
   meaning: text("meaning").notNull(),
   paragraphIndex: integer("paragraph_index").notNull(),
   charIndex: integer("char_index").notNull(),
+  highlightColor: varchar("highlight_color", { length: 50 }).default("yellow"), // 新增颜色字段
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

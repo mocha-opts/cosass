@@ -83,7 +83,10 @@ export async function getParagraphTranslations(
 }
 export async function getWordNotes(articleId: number, userId: number) {
   return await db.query.wordNotes.findMany({
-    where: (w) => eq(w.articleId, articleId) && eq(w.userId, userId),
+    where: and(
+      eq(wordNotes.articleId, articleId),
+      eq(wordNotes.userId, userId)
+    ),
   });
 }
 
@@ -94,6 +97,7 @@ export async function saveWordNote({
   meaning,
   paragraphIndex,
   charIndex,
+  highlightColor = "yellow",
 }: {
   articleId: number;
   userId: number;
@@ -101,6 +105,7 @@ export async function saveWordNote({
   meaning: string;
   paragraphIndex: number;
   charIndex: number;
+  highlightColor?: string;
 }) {
   try {
     console.log("=== saveWordNote function called ===");
@@ -111,6 +116,7 @@ export async function saveWordNote({
       meaning,
       paragraphIndex,
       charIndex,
+      highlightColor,
     });
 
     const result = await db
@@ -122,6 +128,7 @@ export async function saveWordNote({
         meaning,
         paragraphIndex,
         charIndex,
+        highlightColor,
       })
       .returning();
 

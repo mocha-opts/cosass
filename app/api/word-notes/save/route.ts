@@ -9,8 +9,14 @@ export async function POST(req: Request) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { articleId, word, meaning, paragraphIndex, charIndex } =
-      await req.json();
+    const {
+      articleId,
+      word,
+      meaning,
+      paragraphIndex,
+      charIndex,
+      highlightColor,
+    } = await req.json();
 
     if (!articleId || !word || !meaning || paragraphIndex === undefined) {
       return Response.json(
@@ -26,6 +32,7 @@ export async function POST(req: Request) {
       meaning,
       paragraphIndex,
       charIndex,
+      highlightColor: highlightColor || "yellow",
     });
     return Response.json({ message: "Word note saved" }, { status: 201 });
   } catch (error) {
