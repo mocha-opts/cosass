@@ -1,12 +1,7 @@
 "use client";
-import ArticleViewer from "@/components/article/ArticleViewer";
-import WordNotePanel from "@/components/article/WordNotePanel";
-import { PdfExport } from "@/components/article/PDFExport";
+import PDFArticleViewer from "@/components/article/PDFArticleViewer";
 import useSWR from "swr";
 import { use } from "react";
-import { ArrowLeft, BookOpen, Clock, Share2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 
@@ -18,12 +13,19 @@ export default function ArticlePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
 
   const articleId = parseInt(id);
   const { data: articleData, error: articleError } = useSWR(
     !!articleId ? "/api/articles/" + articleId : null,
     fetcher
   );
+
+  // 分享功能
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert("已复制文章链接！");
+  };
 
   if (articleError) return <div>Failed to load</div>;
   if (!articleData)
@@ -46,13 +48,6 @@ export default function ArticlePage({
     ? JSON.parse(article.content)
     : [];
 
-  const router = useRouter();
-  // 分享功能
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    alert("已复制文章链接！");
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-700">
       <div className="container mx-auto px-4 py-6">
@@ -62,7 +57,7 @@ export default function ArticlePage({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          <ArticleViewer
+          <PDFArticleViewer
             content={contentArray}
             notes={wordNotes || []}
             translations={paragraphTranslations || []}
@@ -70,11 +65,6 @@ export default function ArticlePage({
             title={article.title}
             onBack={() => router.push("/articles")}
             onShare={handleShare}
-            pdfExportProps={{
-              article,
-              notes: wordNotes || [],
-              translations: paragraphTranslations || [],
-            }}
           />
         </motion.div>
       </div>

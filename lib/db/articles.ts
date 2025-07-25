@@ -82,12 +82,15 @@ export async function getParagraphTranslations(
   return results; // 每段对应 translation, paragraphIndex
 }
 export async function getWordNotes(articleId: number, userId: number) {
-  return await db.query.wordNotes.findMany({
+  const notes = await db.query.wordNotes.findMany({
     where: and(
       eq(wordNotes.articleId, articleId),
       eq(wordNotes.userId, userId)
     ),
   });
+
+  console.log("Retrieved word notes:", notes);
+  return notes;
 }
 
 export async function saveWordNote({

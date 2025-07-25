@@ -5,6 +5,7 @@ import useSWR, { mutate } from "swr";
 import useSWRMutation from "swr/mutation";
 import Highlighter from "react-highlight-words";
 import { motion } from "framer-motion";
+import { BallSelector } from "./BallSelector";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -266,64 +267,7 @@ export default function ArticleViewer({
     };
   }, [articleId, currentPage, pages.length, startTime]);
 
-  const handleTextSelection = (paragraphIndex: number) => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-
-    const selectedText = selection.toString().trim();
-    if (!selectedText) {
-      setShowFloatingBall(false);
-      return;
-    }
-
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    const charIndex = calculateCharIndex(range, paragraphIndex);
-
-    setSelectedText(selectedText);
-    setSelectedParagraph(paragraphIndex);
-    setPopoverPosition({
-      x: rect.right + 12,
-      y: rect.top - 32,
-    });
-    setCharIndex(charIndex);
-    setTranslationText("");
-    setShowTranslateButton(true);
-    setIsAutoTranslating(false);
-    setShowFloatingBall(true); // 只显示小球
-    setPopoverOpen(false); // 不弹出popover
-  };
-
-  // 监听点击空白处或取消选区，自动隐藏小球
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (showFloatingBall || popoverOpen) {
-        // 如果点击在小球或popover外部，隐藏小球和popover
-        const ball = document.getElementById("floating-ball");
-        const pop = document.getElementById("popover-content");
-        if (
-          ball &&
-          !ball.contains(e.target as Node) &&
-          (!pop || !pop.contains(e.target as Node))
-        ) {
-          setShowFloatingBall(false);
-          setPopoverOpen(false);
-        }
-      }
-    };
-    const handleSelectionChange = () => {
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) {
-        setShowFloatingBall(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("selectionchange", handleSelectionChange);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("selectionchange", handleSelectionChange);
-    };
-  }, [showFloatingBall, popoverOpen]);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const calculateCharIndex = (range: Range, paragraphIndex: number): number => {
     try {
@@ -431,7 +375,7 @@ export default function ArticleViewer({
     );
 
     if (paragraphNotes.length === 0) {
-      return <span>{paragraph}</span>;
+      return <span style={{ userSelect: "text" }}>{paragraph}</span>;
     }
 
     const sortedNotes = paragraphNotes.sort(
@@ -447,7 +391,7 @@ export default function ArticleViewer({
 
       if (startPos > lastIndex) {
         elements.push(
-          <span key={`text-${lastIndex}`}>
+          <span key={`text-${lastIndex}`} style={{ userSelect: "text" }}>
             {paragraph.substring(lastIndex, startPos)}
           </span>
         );
@@ -465,6 +409,7 @@ export default function ArticleViewer({
             margin: "0",
             borderRadius: "2px",
             cursor: "pointer",
+            userSelect: "text",
           }}
           className="transition-opacity hover:opacity-75"
           onClick={() => scrollToNote(note.id)}
@@ -479,7 +424,9 @@ export default function ArticleViewer({
 
     if (lastIndex < paragraph.length) {
       elements.push(
-        <span key={`text-${lastIndex}`}>{paragraph.substring(lastIndex)}</span>
+        <span key={`text-${lastIndex}`} style={{ userSelect: "text" }}>
+          {paragraph.substring(lastIndex)}
+        </span>
       );
     }
 
@@ -603,12 +550,7 @@ export default function ArticleViewer({
       <div className="max-w-none mx-auto flex gap-6">
         {/* 左侧缩略图面板 */}
         {showThumbnails && (
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="flex-shrink-0 w-32 h-screen"
-          >
+          <div>
             <div className="h-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden flex flex-col">
               <div className="flex items-center gap-2 p-3 pb-2 border-b border-gray-200 dark:border-gray-600 flex-shrink-0">
                 <BookOpen className="w-4 h-4" />
@@ -683,11 +625,12 @@ export default function ArticleViewer({
                 </div>
               </ScrollArea>
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* 主要内容区域 */}
         <div
+          ref={contentRef}
           className="bg-white dark:bg-gray-800 shadow-2xl border border-gray-200 dark:border-gray-700 mx-auto"
           style={{
             width: "210mm",
@@ -707,18 +650,11 @@ export default function ArticleViewer({
             )}
             <div className="space-y-6">
               {currentPageData.paragraphs.map((paragraph, index) => (
-                <motion.div
-                  key={paragraph.index}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                  className="space-y-4"
-                >
+                <div className="space-y-4">
                   {/* 英文段落 */}
                   <div
                     data-paragraph-index={paragraph.index}
                     className="text-base leading-relaxed text-gray-800 dark:text-gray-200 select-text cursor-text font-medium"
-                    onMouseUp={() => handleTextSelection(paragraph.index)}
                   >
                     <CustomHighlighter
                       paragraph={paragraph.content}
@@ -734,7 +670,7 @@ export default function ArticleViewer({
                       </p>
                     </div>
                   )}
-                </motion.div>
+                </div>
               ))}
             </div>
           </div>
@@ -838,32 +774,16 @@ export default function ArticleViewer({
         </div>
       </div>
 
-      {/* 悬浮小球 */}
-      {showFloatingBall && !popoverOpen && (
-        <button
-          id="floating-ball"
-          style={{
-            position: "fixed",
-            left: popoverPosition.x,
-            top: popoverPosition.y,
-            zIndex: 50,
-            transform: "translate(-50%, -100%)",
-            pointerEvents: "auto",
-            background: "linear-gradient(135deg, #6366f1 60%, #38bdf8 100%)",
-            boxShadow:
-              "0 2px 12px 0 rgba(56, 189, 248, 0.18), 0 0 0 2px rgba(99,102,241,0.10)",
-          }}
-          className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400/60 transition-all duration-200 group shadow-lg cursor-pointer hover:brightness-110 hover:shadow-2xl"
-          onClick={() => {
-            setPopoverOpen(true);
-            // 不隐藏小球，不清除选区
-          }}
-          title="添加笔记或翻译"
-          tabIndex={-1}
-        >
-          <PenLine className="w-5 h-5 text-white drop-shadow group-hover:text-blue-100 transition-colors" />
-        </button>
-      )}
+      {/* 悬浮小球组件 */}
+      <BallSelector
+        containerRef={contentRef}
+        onBallClick={({ text, rect, range, paragraphIndex }) => {
+          setSelectedText(text);
+          setPopoverPosition({ x: rect.right + 12, y: rect.top - 32 });
+          setPopoverOpen(true);
+          setSelectedParagraph(paragraphIndex ?? 0);
+        }}
+      />
 
       {/* Selection Popover */}
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
