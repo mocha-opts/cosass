@@ -41,6 +41,9 @@ import {
 import useSWRMutation from "swr/mutation";
 import { mutate } from "swr";
 import { BallSelector } from "./BallSelector";
+import { usePDFViewerStore } from "@/lib/stores/pdf-viewer-store";
+import { NotesPanel } from "./pdf-viewer/NotesPanel";
+import { HighlightMatcher } from "@/lib/utils/highlight-matcher";
 
 Font.register({
   family: "Noto Sans SC Regular",
@@ -133,6 +136,13 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontStyle: "italic",
   },
+  paragraphTitle: {
+    fontSize: 12,
+    marginBottom: 8,
+    fontWeight: "bold",
+    color: "#1f2937",
+    fontFamily: "Noto Sans SC Medium",
+  },
   pageNumber: {
     position: "absolute",
     bottom: 20,
@@ -182,6 +192,21 @@ function ArticlePDFDocument({
   notes: WordNote[];
   translations: ParagraphTranslation[];
 }) {
+  // 按段落分组笔记
+  const notesByParagraph = notes.reduce((acc, note) => {
+    const paragraphIndex = note.paragraphIndex;
+    if (!acc[paragraphIndex]) {
+      acc[paragraphIndex] = [];
+    }
+    acc[paragraphIndex].push(note);
+    return acc;
+  }, {} as Record<number, WordNote[]>);
+
+  // 按段落索引排序
+  const sortedParagraphs = Object.keys(notesByParagraph)
+    .map(Number)
+    .sort((a, b) => a - b);
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -216,14 +241,20 @@ function ArticlePDFDocument({
               暂无笔记
             </Text>
           ) : (
-            notes.map((note) => (
-              <View key={note.id} style={styles.noteItem}>
-                <Text style={styles.originalText}>{note.word}</Text>
-                <Text style={styles.translationText}>{note.meaning}</Text>
-                <Text style={styles.noteDate}>
-                  第 {note.paragraphIndex + 1} 段 -{" "}
-                  {new Date(note.createdAt!).toLocaleDateString("zh-CN")}
+            sortedParagraphs.map((paragraphIndex) => (
+              <View key={paragraphIndex} style={{ marginBottom: 12 }}>
+                {/* 段落分组标题 */}
+                <Text style={styles.paragraphTitle}>
+                  第 {paragraphIndex + 1} 段
                 </Text>
+
+                {/* 该段落的笔记 */}
+                {notesByParagraph[paragraphIndex].map((note) => (
+                  <View key={note.id} style={styles.noteItem}>
+                    <Text style={styles.originalText}>{note.word}</Text>
+                    <Text style={styles.translationText}>{note.meaning}</Text>
+                  </View>
+                ))}
               </View>
             ))
           )}
@@ -251,18 +282,36 @@ export default function PDFArticleViewer({
   onBack,
   onShare,
 }: PDFArticleViewerProps) {
-  const [showPDF, setShowPDF] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [selectedText, setSelectedText] = useState("");
-  const [selectedParagraph, setSelectedParagraph] = useState(0);
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
-  const [noteText, setNoteText] = useState("");
-  const [translationText, setTranslationText] = useState("");
-  const [showTranslateButton, setShowTranslateButton] = useState(false);
-  const [isAutoTranslating, setIsAutoTranslating] = useState(false);
-  const [selectedHighlightColor, setSelectedHighlightColor] =
-    useState("yellow");
+  const {
+    showPDF,
+    setShowPDF,
+    articleFont,
+    notesFont,
+    lineSpacing,
+    setArticleFont,
+    setNotesFont,
+    setLineSpacing,
+    isGenerating,
+    setIsGenerating,
+    selectedHighlightColor,
+    setSelectedHighlightColor,
+    popoverOpen,
+    setPopoverOpen,
+    popoverPosition,
+    setPopoverPosition,
+    selectedText,
+    setSelectedText,
+    selectedParagraph,
+    setSelectedParagraph,
+    noteText,
+    setNoteText,
+    translationText,
+    setTranslationText,
+    showTranslateButton,
+    setShowTranslateButton,
+    isAutoTranslating,
+    setIsAutoTranslating,
+  } = usePDFViewerStore();
 
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -305,13 +354,6 @@ export default function PDFArticleViewer({
       border: "border-orange-300",
     },
   ];
-
-  const getHighlightClass = (color: string) => {
-    const colorConfig = highlightColors.find((c) => c.name === color);
-    return colorConfig
-      ? `bg-${color}-200/30 dark:bg-${color}-800/30`
-      : "bg-yellow-200/30 dark:bg-yellow-800/30";
-  };
 
   const {
     trigger: translate,
@@ -382,6 +424,49 @@ export default function PDFArticleViewer({
     }
   };
 
+  const extractSelectionContext = (range: Range, paragraphIndex: number) => {
+    try {
+      const paragraphElement = document.querySelector(
+        `[data-paragraph-index="${paragraphIndex}"]`
+      );
+      if (!paragraphElement) {
+        return {
+          selectedText: "",
+          contextBefore: "",
+          contextAfter: "",
+          textLength: 0,
+        };
+      }
+
+      const paragraphText = paragraphElement.textContent || "";
+      const selectedText = range.toString();
+      const charIndex = calculateCharIndex(range, paragraphIndex);
+
+      // 使用HighlightMatcher提取上下文
+      const { contextBefore, contextAfter } = HighlightMatcher.extractContext(
+        paragraphText,
+        charIndex,
+        charIndex + selectedText.length,
+        50 // 上下文长度
+      );
+
+      return {
+        selectedText,
+        contextBefore,
+        contextAfter,
+        textLength: selectedText.length,
+      };
+    } catch (error) {
+      console.error("Failed to extract selection context:", error);
+      return {
+        selectedText: "",
+        contextBefore: "",
+        contextAfter: "",
+        textLength: 0,
+      };
+    }
+  };
+
   // BallSelector 回调函数
   const handleBallClick = ({
     text,
@@ -425,16 +510,29 @@ export default function PDFArticleViewer({
     if (!selectedText || !translationText) return;
 
     try {
+      const selection = window.getSelection();
+      const range = selection?.getRangeAt(0);
+
+      if (!range) {
+        console.error("No selection range found");
+        return;
+      }
+
+      // 获取上下文信息
+      const contextInfo = extractSelectionContext(range, selectedParagraph);
+      const charIndex = calculateCharIndex(range, selectedParagraph);
+
       await saveNotes({
         articleId,
         word: selectedText,
         meaning: translationText,
         paragraphIndex: selectedParagraph,
-        charIndex: calculateCharIndex(
-          window.getSelection()?.getRangeAt(0) || document.createRange(),
-          selectedParagraph
-        ),
+        charIndex,
         highlightColor: selectedHighlightColor,
+        selectedText: contextInfo.selectedText,
+        contextBefore: contextInfo.contextBefore,
+        contextAfter: contextInfo.contextAfter,
+        textLength: contextInfo.textLength,
       });
 
       mutate(`/api/articles/${articleId}`);
@@ -452,15 +550,6 @@ export default function PDFArticleViewer({
     utterance.lang = "en-US";
     utterance.rate = 0.8;
     window.speechSynthesis.speak(utterance);
-  };
-
-  const getHighlightWords = (paragraphIndex: number) => {
-    return notes
-      .filter((note) => note.paragraphIndex === paragraphIndex)
-      .map((note) => ({
-        word: note.word,
-        color: note.highlightColor || "yellow",
-      }));
   };
 
   // 定位到对应笔记
@@ -496,7 +585,19 @@ export default function PDFArticleViewer({
     );
 
     if (paragraphNotes.length === 0) {
-      return <span style={{ userSelect: "text" }}>{paragraph}</span>;
+      return (
+        <span
+          style={{
+            userSelect: "text",
+            fontFamily: articleFont.family,
+            fontSize: `${articleFont.size}px`,
+            color: articleFont.color,
+            lineHeight: lineSpacing.article,
+          }}
+        >
+          {paragraph}
+        </span>
+      );
     }
 
     // 按字符位置排序，确保正确的渲染顺序
@@ -513,16 +614,22 @@ export default function PDFArticleViewer({
 
       // 确保位置有效
       if (startPos < 0 || endPos > paragraph.length || startPos >= endPos) {
-        console.warn(
-          `Invalid note position: ${startPos}-${endPos} for word "${note.word}"`
-        );
         return;
       }
 
       // 添加开始位置之前的文本
       if (startPos > lastIndex) {
         elements.push(
-          <span key={`text-${lastIndex}`} style={{ userSelect: "text" }}>
+          <span
+            key={`text-${lastIndex}`}
+            style={{
+              userSelect: "text",
+              fontFamily: articleFont.family,
+              fontSize: `${articleFont.size}px`,
+              color: articleFont.color,
+              lineHeight: lineSpacing.article,
+            }}
+          >
             {paragraph.substring(lastIndex, startPos)}
           </span>
         );
@@ -542,6 +649,10 @@ export default function PDFArticleViewer({
             borderRadius: "2px",
             cursor: "pointer",
             userSelect: "text",
+            fontFamily: articleFont.family,
+            fontSize: `${articleFont.size}px`,
+            color: articleFont.color,
+            lineHeight: lineSpacing.article,
           }}
           className="transition-opacity hover:opacity-75"
           onClick={() => scrollToNote(note.id)}
@@ -557,7 +668,16 @@ export default function PDFArticleViewer({
     // 添加剩余文本
     if (lastIndex < paragraph.length) {
       elements.push(
-        <span key={`text-${lastIndex}`} style={{ userSelect: "text" }}>
+        <span
+          key={`text-${lastIndex}`}
+          style={{
+            userSelect: "text",
+            fontFamily: articleFont.family,
+            fontSize: `${articleFont.size}px`,
+            color: articleFont.color,
+            lineHeight: lineSpacing.article,
+          }}
+        >
           {paragraph.substring(lastIndex)}
         </span>
       );
@@ -604,11 +724,125 @@ export default function PDFArticleViewer({
             </h1>
           </div>
 
-          {/* 右侧操作按钮 */}
-          <div className="flex items-center gap-2">
-            {/* 颜色选择器 */}
-            <div className="flex items-center gap-2 mr-4">
-              <span className="text-sm font-medium">笔刷颜色:</span>
+          {/* 右侧控制区域 */}
+          <div className="flex items-center gap-4 flex-wrap">
+            {/* 文章字体设置 */}
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs whitespace-nowrap">
+                文章字体
+              </Badge>
+              <select
+                value={articleFont.family}
+                onChange={(e) => setArticleFont({ family: e.target.value })}
+                className="text-xs border rounded px-2 py-1 min-w-[80px]"
+                title="选择文章字体类型"
+              >
+                <option value="system-ui">系统默认</option>
+                <option value="serif">衬线字体</option>
+                <option value="sans-serif">无衬线字体</option>
+                <option value="monospace">等宽字体</option>
+                <option value="Georgia, serif">Georgia</option>
+                <option value="Times New Roman, serif">Times New Roman</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="Helvetica, sans-serif">Helvetica</option>
+              </select>
+              <select
+                value={articleFont.size}
+                onChange={(e) =>
+                  setArticleFont({ size: Number(e.target.value) })
+                }
+                className="text-xs border rounded px-2 py-1 w-16"
+                title="选择文章字体大小"
+              >
+                {[10, 12, 14, 16, 18, 20, 22, 24].map((size) => (
+                  <option key={size} value={size}>
+                    {size}px
+                  </option>
+                ))}
+              </select>
+              <input
+                type="color"
+                value={articleFont.color}
+                onChange={(e) => setArticleFont({ color: e.target.value })}
+                className="w-6 h-6 border rounded cursor-pointer"
+                title="文章字体颜色"
+              />
+              <select
+                value={lineSpacing.article}
+                onChange={(e) =>
+                  setLineSpacing({ article: Number(e.target.value) })
+                }
+                className="text-xs border rounded px-2 py-1 w-16"
+                title="文章行距"
+              >
+                {[1.0, 1.2, 1.5, 1.8, 2.0, 2.5].map((spacing) => (
+                  <option key={spacing} value={spacing}>
+                    {spacing}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 笔记字体设置 */}
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs whitespace-nowrap">
+                笔记字体
+              </Badge>
+              <select
+                value={notesFont.family}
+                onChange={(e) => setNotesFont({ family: e.target.value })}
+                className="text-xs border rounded px-2 py-1 min-w-[80px]"
+                title="选择笔记字体类型"
+              >
+                <option value="system-ui">系统默认</option>
+                <option value="serif">衬线字体</option>
+                <option value="sans-serif">无衬线字体</option>
+                <option value="monospace">等宽字体</option>
+                <option value="Georgia, serif">Georgia</option>
+                <option value="Times New Roman, serif">Times New Roman</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="Helvetica, sans-serif">Helvetica</option>
+              </select>
+              <select
+                value={notesFont.size}
+                onChange={(e) => setNotesFont({ size: Number(e.target.value) })}
+                className="text-xs border rounded px-2 py-1 w-16"
+                title="选择笔记字体大小"
+              >
+                {[10, 12, 14, 16, 18, 20, 22, 24].map((size) => (
+                  <option key={size} value={size}>
+                    {size}px
+                  </option>
+                ))}
+              </select>
+              <input
+                type="color"
+                value={notesFont.color}
+                onChange={(e) => setNotesFont({ color: e.target.value })}
+                className="w-6 h-6 border rounded cursor-pointer"
+                title="笔记字体颜色"
+              />
+              <select
+                value={lineSpacing.notes}
+                onChange={(e) =>
+                  setLineSpacing({ notes: Number(e.target.value) })
+                }
+                className="text-xs border rounded px-2 py-1 w-16"
+                title="笔记行距"
+              >
+                {[1.0, 1.2, 1.5, 1.8, 2.0, 2.5].map((spacing) => (
+                  <option key={spacing} value={spacing}>
+                    {spacing}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 高亮颜色选择器 */}
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs whitespace-nowrap">
+                笔刷颜色
+              </Badge>
               <div className="flex items-center gap-1">
                 {highlightColors.map((color) => (
                   <button
@@ -627,25 +861,28 @@ export default function PDFArticleViewer({
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowPDF(!showPDF)}
-              className={showPDF ? "bg-blue-50 border-blue-300" : ""}
-            >
-              <Eye className="w-4 h-4 mr-1" />
-              {showPDF ? "隐藏" : "预览"} PDF
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownloadPDF}
-              disabled={isGenerating}
-              className="hover:bg-green-50 hover:border-green-300"
-            >
-              <Download className="w-4 h-4 mr-1" />
-              {isGenerating ? "生成中..." : "下载 PDF"}
-            </Button>
+            {/* PDF和下载按钮 */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPDF(!showPDF)}
+                className={showPDF ? "bg-blue-50 border-blue-300" : ""}
+              >
+                <Eye className="w-4 h-4 mr-1" />
+                {showPDF ? "隐藏" : "预览"} PDF
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadPDF}
+                disabled={isGenerating}
+                className="hover:bg-green-50 hover:border-green-300"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                {isGenerating ? "生成中..." : "下载 PDF"}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -681,7 +918,13 @@ export default function PDFArticleViewer({
                         {/* 英文段落 */}
                         <div
                           data-paragraph-index={index}
-                          className="text-base leading-relaxed text-gray-800 dark:text-gray-200 select-text cursor-text font-medium"
+                          className="select-text cursor-text"
+                          style={{
+                            fontFamily: articleFont.family,
+                            fontSize: `${articleFont.size}px`,
+                            color: articleFont.color,
+                            lineHeight: lineSpacing.article,
+                          }}
                         >
                           <CustomHighlighter
                             paragraph={paragraph}
@@ -715,87 +958,12 @@ export default function PDFArticleViewer({
         {/* 右侧笔记面板 */}
         <div className="w-80 flex-shrink-0">
           <div className="h-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden flex flex-col">
-            <div className="flex items-center gap-2 p-3 pb-2 border-b border-gray-200 dark:border-gray-600 flex-shrink-0">
-              <BookOpen className="w-4 h-4" />
-              <span className="font-medium text-sm">单词笔记</span>
-              <Badge variant="secondary" className="ml-auto text-xs">
-                {notes.length}
-              </Badge>
-            </div>
             <ScrollArea className="flex-1 p-3">
-              {notes.length === 0 ? (
-                <div className="text-center py-8">
-                  <BookOpen className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500 text-xs">暂无笔记</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {notes.map((note) => (
-                    <div
-                      key={note.id}
-                      id={`note-${note.id}`}
-                      className="group border border-gray-200 dark:border-gray-600 rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-3 h-3 rounded-full ${
-                              getHighlightClass(
-                                note.highlightColor || "yellow"
-                              ).split(" ")[0]
-                            }`}
-                            title={`高亮颜色: ${
-                              highlightColors.find(
-                                (c) =>
-                                  c.name === (note.highlightColor || "yellow")
-                              )?.label
-                            }`}
-                          />
-                          <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded">
-                            第 {note.paragraphIndex + 1} 段
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => playTTS(note.word)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <Volume2 className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-red-500 hover:text-red-600"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="font-medium text-blue-600 dark:text-blue-400 mb-1 text-sm">
-                        {note.word}
-                      </div>
-
-                      {note.meaning && (
-                        <p className="text-xs text-gray-700 dark:text-gray-300 mb-2">
-                          {note.meaning}
-                        </p>
-                      )}
-
-                      <div className="text-xs text-gray-400">
-                        {new Date(note.createdAt!).toLocaleDateString("zh-CN", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <NotesPanel
+                notes={notes}
+                onNoteClick={scrollToNote}
+                onPlayTTS={playTTS}
+              />
             </ScrollArea>
           </div>
         </div>

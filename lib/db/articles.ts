@@ -101,6 +101,10 @@ export async function saveWordNote({
   paragraphIndex,
   charIndex,
   highlightColor = "yellow",
+  selectedText,
+  contextBefore,
+  contextAfter,
+  textLength,
 }: {
   articleId: number;
   userId: number;
@@ -109,6 +113,10 @@ export async function saveWordNote({
   paragraphIndex: number;
   charIndex: number;
   highlightColor?: string;
+  selectedText?: string;
+  contextBefore?: string;
+  contextAfter?: string;
+  textLength?: number;
 }) {
   try {
     console.log("=== saveWordNote function called ===");
@@ -120,6 +128,10 @@ export async function saveWordNote({
       paragraphIndex,
       charIndex,
       highlightColor,
+      selectedText,
+      contextBefore,
+      contextAfter,
+      textLength,
     });
 
     const result = await db
@@ -132,6 +144,10 @@ export async function saveWordNote({
         paragraphIndex,
         charIndex,
         highlightColor,
+        selectedText,
+        contextBefore,
+        contextAfter,
+        textLength,
       })
       .returning();
 

@@ -102,7 +102,12 @@ export const wordNotes = pgTable("word_notes", {
   meaning: text("meaning").notNull(),
   paragraphIndex: integer("paragraph_index").notNull(),
   charIndex: integer("char_index").notNull(),
-  highlightColor: varchar("highlight_color", { length: 50 }).default("yellow"), // 新增颜色字段
+  highlightColor: varchar("highlight_color", { length: 50 }).default("yellow"), // 高亮颜色
+  // 新增字段：用于更准确的高亮定位
+  selectedText: text("selected_text"), // 实际选择的文本
+  contextBefore: varchar("context_before", { length: 100 }), // 前文上下文
+  contextAfter: varchar("context_after", { length: 100 }), // 后文上下文
+  textLength: integer("text_length"), // 选择文本的长度
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
